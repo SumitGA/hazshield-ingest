@@ -1,0 +1,33 @@
+[Unit]
+Description=HazShield Rust ingestion gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=hazshield
+Group=hazshield
+WorkingDirectory=/opt/hazshield-ingest
+ExecStart=/opt/hazshield-ingest/hazshield-ingest
+Environment=RUST_LOG=hazshield_ingest=info,tower_http=warn
+Environment=HAZ_BIND_ADDR=127.0.0.1:8020
+Environment=HAZ_DATABASE_URL=postgresql://hazshield:CHANGE_ME@10.10.0.12/hazshield
+Environment=HAZ_REDIS_URL=redis://:CHANGE_ME@10.10.0.12:6379/0
+Restart=on-failure
+RestartSec=2s
+
+# 2GB VM shared with caddy + cloudflared + api stub: caps are how
+# co-tenants stay polite. Ingest gets the biggest slice — it's the point.
+MemoryMax=512M
+CPUQuota=150%
+
+# Same hardening posture as every other unit in the system
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/hazshield-ingest/spool
+# TERM then 15s to drain before KILL — pairs with graceful shutdown
+TimeoutStopSec=15
+KillSignal=SIGTERM
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,35 @@
+[package]
+name = "hazshield-ingest"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+
+[dependencies]
+# Web layer — thin skin over tokio/tower
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "limit"] }
+
+# Domain types & wire format
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["serde", "v7"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+# Config from environment
+dotenvy = "0.15"
+envy = "0.4"
+
+# Observability — JSON structured logs from day one
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Errors
+thiserror = "2"
+anyhow = "1"
+
+[profile.release]
+lto = "thin"          # cross-crate inlining; meaningful for hot loops later
+codegen-units = 1     # slower compile, better optimization
+panic = "abort"       # a safety gateway has no business unwinding past a bug
