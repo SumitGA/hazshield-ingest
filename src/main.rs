@@ -2,8 +2,9 @@ mod config;
 mod routes;
 mod telemetry;
 mod types;
+mod state;
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::signal;
 use tracing::{info, warn};
 
@@ -25,7 +26,11 @@ async fn run() -> anyhow::Result<()> {
     let cfg = config::Config::load()?;
     info!(bind = %cfg.bind_addr, "hazshield-ingest starting");
 
-    let app = routes::router();
+    let app_state = state::AppState {
+        started: Instant::now(),
+    };
+
+    let app = routes::router(app_state);
 
     let listener = tokio::net::TcpListener::bind(&cfg.bind_addr).await?;
     info!("listening");

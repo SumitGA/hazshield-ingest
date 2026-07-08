@@ -1,10 +1,13 @@
-use axum::{routing::get, Json, Router};
+use crate::state::AppState;
+use axum::{extract::State, routing::get, Json, Router};
 use serde_json::{json, Value};
 
-pub fn router() -> Router {
+pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .route("/version", get(version))
+        .route("/uptime", get(uptime))
+        .with_state(state)
 }
 
 /// Liveness: "the process is up and the runtime schedules tasks".
@@ -19,4 +22,11 @@ async fn version() -> Json<Value> {
         "service": "hazshield-ingest",
         "version": env!("CARGO_PKG_VERSION"),
     }))
+}
+
+async fn uptime(State(s): State<AppState>) -> Json<Value> {
+    let uptime = std::time::Instant::now()
+        .duration_since(s.started)
+        .as_secs();
+    Json(json!({ "uptime": uptime }))
 }
