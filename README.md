@@ -1,6 +1,6 @@
 # hazshield-ingest — Session 1 skeleton
 
-## Build (on the homelab host or your laptop — NOT the 2GB edge VM)
+## Build (on the control machine)
     cargo build --release
     # binary: target/release/hazshield-ingest
 
