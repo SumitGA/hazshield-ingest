@@ -1,10 +1,12 @@
 use crate::state::AppState;
-use axum::{extract::State, http::StatusCode, routing::get, Json, Router};
+use axum::{extract::State, http::StatusCode, routing::{get, post}, Json, Router};
 use serde_json::{json, Value};
 
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
+        .route("/ingest", post(crate::ingest::ingest_batch))
+        .route("/metrics", get(metrics))
         .route("/readyz", get(readyz))
         .route("/version", get(version))
         .route("/uptime", get(uptime))
@@ -46,6 +48,9 @@ async fn version() -> Json<Value> {
     Json(json!({
         "service": "hazshield-ingest",
         "version": env!("CARGO_PKG_VERSION"),
-        "git_sha": env!("GIT_SHA"),
     }))
+}
+
+async fn metrics(State(s): State<AppState>) -> String {
+    s.metrics.render()
 }

@@ -5,7 +5,7 @@
 //! internally an Arc, SharedRegistry is an Arc. Cloning this struct costs
 //! ~24 bytes of pointer copies. That is the whole trick.
 
-use crate::registry::SharedRegistry;
+use crate::{metrics::Metrics, registry::SharedRegistry};
 use sqlx::PgPool;
 use std::time::Instant;
 #[derive(Clone)]
@@ -13,4 +13,6 @@ pub struct AppState {
     pub started: Instant,
     pub pool: PgPool,
     pub registry: SharedRegistry,
+    pub metrics: Metrics,
+    pub max_batch_size: usize,
 }

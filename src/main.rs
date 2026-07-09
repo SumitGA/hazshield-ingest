@@ -1,9 +1,12 @@
 mod config;
+mod error;
+mod ingest;
+mod metrics;
+mod registry;
 mod routes;
+mod state;
 mod telemetry;
 mod types;
-mod state;
-mod registry;
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -16,7 +19,6 @@ fn main() -> anyhow::Result<()> {
         .thread_name("hazshield-worker")
         .enable_all()
         .build()?;
-
     runtime.block_on(run())
 }
 
@@ -46,6 +48,8 @@ async fn run() -> anyhow::Result<()> {
     );
 
     let app_state = state::AppState {
+        metrics: metrics::Metrics::new(),
+        max_batch_size: cfg.max_batch_size,
         started: Instant::now(),
         pool,
         registry: shared,

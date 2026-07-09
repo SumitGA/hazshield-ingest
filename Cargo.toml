@@ -58,3 +58,7 @@ path = "src/main.rs"
 [[bin]]
 name = "seed"
 path = "src/bin/seed.rs"
+
+[dependencies.prometheus]
+version = "=0.13.4"
+default-features = false
