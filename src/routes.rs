@@ -1,5 +1,5 @@
 use crate::state::AppState;
-use axum::{extract::State, routing::get, Json, Router};
+use axum::{extract::State, http::StatusCode, routing::get, Json, Router};
 use serde_json::{json, Value};
 
 pub fn router(state: AppState) -> Router {
@@ -18,7 +18,7 @@ async fn healthz() -> Json<Value> {
     Json(json!({ "status": "ok" }))
 }
 
-async fn readyz(States(s): State<AppState>) -> (StatusCode, Json<Value>) {
+async fn readyz(State(s): State<AppState>) -> (StatusCode, Json<Value>) {
     let reg = s.registry.load();
     let db_ok = sqlx::query("SELECT 1").execute(&s.pool).await.is_ok();
 

@@ -3,6 +3,7 @@ mod routes;
 mod telemetry;
 mod types;
 mod state;
+mod registry;
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};

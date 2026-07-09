@@ -127,6 +127,3 @@ async fn reload(pool: &PgPool, registry: &SharedRegistry) {
         Err(e) => error!(error = %e, "registry reload failed; keeping previous snapshot"),
     }
 }
-nsorMeta>,
-    pub generation: u64,
-}

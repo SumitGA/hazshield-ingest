@@ -27,7 +27,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # Errors
 thiserror = "2"
-anyhow = "1"
+anyhow = "=1.0.86"
+futures-util = "0.3.30"
 
 [profile.release]
 lto = "thin"          # cross-crate inlining; meaningful for hot loops later
@@ -45,7 +46,7 @@ default-features = false
 features = ["tokio-comp", "aio"]
 
 [dependencies.arc-swap]
-version = "=0.7.1"
+version = "=1.7.1"
 
 [dependencies.rand]
 version = "=0.8.5"
@@ -56,4 +57,4 @@ path = "src/main.rs"
 
 [[bin]]
 name = "seed"
-path = "src/bin/seed/rs"
+path = "src/bin/seed.rs"
