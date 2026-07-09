@@ -11,4 +11,10 @@ fn main() {
         .output().map(|o| !o.stdout.is_empty()).unwrap_or(false);
     println!("cargo:rustc-env=GIT_SHA={}{}", sha, if dirty { "-dirty" } else { "" });
     println!("cargo:rerun-if-changed=.git/HEAD");
+    // HEAD only changes on branch switch; the ref file changes on commit.
+    if let Ok(head) = std::fs::read_to_string(".git/HEAD") {
+        if let Some(reference) = head.strip_prefix("ref: ") {
+            println!("cargo:rerun-if-changed=.git/{}", reference.trim());
+        }
+    }
 }
