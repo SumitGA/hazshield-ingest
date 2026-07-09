@@ -21,6 +21,7 @@ async fn version() -> Json<Value> {
     Json(json!({
         "service": "hazshield-ingest",
         "version": env!("CARGO_PKG_VERSION"),
+        "git_sha": env!("GIT_SHA"),
     }))
 }
 
