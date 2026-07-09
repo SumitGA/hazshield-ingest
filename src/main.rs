@@ -4,14 +4,12 @@ mod telemetry;
 mod types;
 mod state;
 
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::signal;
 use tracing::{info, warn};
 
 fn main() -> anyhow::Result<()> {
-    // Explicit runtime construction instead of #[tokio::main]: same thing,
-    // but the knobs are visible and ours to tune (worker count on a 2-vCPU
-    // VM, thread names for debugging).
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .thread_name("hazshield-worker")
@@ -26,25 +24,40 @@ async fn run() -> anyhow::Result<()> {
     let cfg = config::Config::load()?;
     info!(bind = %cfg.bind_addr, "hazshield-ingest starting");
 
+    // connect, load registry, arm the doorbell
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(4) // gateway shares the DB with everyone; be polite
+        .acquire_timeout(Duration::from_secs(5))
+        .connect(&cfg.database_url)
+        .await?;
+    info!("postgres pool connected");   
+
+    // Fail fast if the registry can't load at startup: a gateway that
+    // can't validate sensors shouldn't accept traffic at all.
+    let initial = registry::Registry::load(&pool, 1).await?;
+    let shared: registry::SharedRegistry =
+        Arc::new(arc_swap::ArcSwap::from_pointee(initial));
+
+    registry::spawn_invalidation_listener(
+        cfg.redis_url.clone(),
+        pool.clone(),
+        Arc::clone(&shared),
+    );
+
     let app_state = state::AppState {
         started: Instant::now(),
+        pool,
+        registry: shared,
     };
 
     let app = routes::router(app_state);
-
     let listener = tokio::net::TcpListener::bind(&cfg.bind_addr).await?;
     info!("listening");
 
-    // Graceful shutdown is not polish — it's a core requirement.
-    // From Session 4 there will be up to 50k readings buffered in
-    // channels; SIGTERM must mean "drain, then exit", never "drop".
-    // Session 1 wires the mechanism so the drain has somewhere to live.
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 
-    // <- Session 4 adds: close ingest channel, await writer task's
-    //    final flush, fsync spill file. The ORDER will matter.
     info!("drained and stopped");
     Ok(())
 }
