@@ -8,7 +8,7 @@
 //! Session 7 is judged BY these numbers, so they exist from day one.
 
 use prometheus::{
-    Encoder, Histogram, HistogramOpts, IntCounterVec, Opts, Registry, TextEncoder,
+    Encoder, Histogram, HistogramOpts, IntCounter, IntCounterVec, IntGauge, Opts, Registry, TextEncoder,
 };
 use std::sync::Arc;
 
@@ -21,6 +21,12 @@ pub struct Metrics {
     pub violations: IntCounterVec,
     pub batch_size: Histogram,
     pub handler_seconds: Histogram,
+    pub warm_flushed_total: IntCounter,
+    pub warm_flush_failures_total: IntCounter,
+    pub warm_shed_total: IntCounter,
+    pub warm_degraded_total: IntCounterVec,
+    pub warm_buffered: IntGauge,
+    pub warm_flush_seconds: Histogram,
 }
 
 impl Metrics {
@@ -50,13 +56,41 @@ impl Metrics {
         )
         .unwrap();
 
+        let warm_flushed_total =
+            IntCounter::new("warm_flushed_rows_total", "Rows written via COPY").unwrap();
+        let warm_flush_failures_total =
+            IntCounter::new("warm_flush_failures_total", "Failed COPY flushes").unwrap();
+        let warm_shed_total =
+            IntCounter::new("warm_shed_rows_total", "Bulk rows shed during outage").unwrap();
+        let warm_degraded_total = IntCounterVec::new(
+            Opts::new("warm_degraded_total", "Degraded-mode decisions"),
+            &["action"], // kept | dropped
+        )
+        .unwrap();
+        let warm_buffered =
+            IntGauge::new("warm_buffered_rows", "Rows waiting in writer buffer").unwrap();
+        let warm_flush_seconds = Histogram::with_opts(
+            HistogramOpts::new("warm_flush_seconds", "COPY flush latency")
+                .buckets(vec![0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25]),
+        )
+        .unwrap();
+        registry.register(Box::new(warm_flushed_total.clone())).unwrap();
+        registry.register(Box::new(warm_flush_failures_total.clone())).unwrap();
+        registry.register(Box::new(warm_shed_total.clone())).unwrap();
+        registry.register(Box::new(warm_degraded_total.clone())).unwrap();
+        registry.register(Box::new(warm_buffered.clone())).unwrap();
+        registry.register(Box::new(warm_flush_seconds.clone())).unwrap();
+
         for c in [&readings, &violations] {
             registry.register(Box::new(c.clone())).unwrap();
         }
         registry.register(Box::new(batch_size.clone())).unwrap();
         registry.register(Box::new(handler_seconds.clone())).unwrap();
 
-        Self { registry: Arc::new(registry), readings, violations, batch_size, handler_seconds }
+        Self { registry: Arc::new(registry), readings, violations, batch_size, handler_seconds,
+            warm_flushed_total, warm_flush_failures_total, warm_shed_total, warm_degraded_total,
+            warm_buffered, warm_flush_seconds
+        }
     }
 
     pub fn render(&self) -> String {

@@ -38,10 +38,7 @@ async fn readyz(State(s): State<AppState>) -> (StatusCode, Json<Value>) {
 }
 
 async fn uptime(State(s): State<AppState>) -> Json<Value> {
-    let uptime = std::time::Instant::now()
-        .duration_since(s.started)
-        .as_secs();
-    Json(json!({ "uptime": uptime }))
+    Json(json!({ "uptime_seconds": s.started.elapsed().as_secs()}))
 }
 
 async fn version() -> Json<Value> {

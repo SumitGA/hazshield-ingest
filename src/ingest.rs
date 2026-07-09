@@ -17,9 +17,11 @@
 //! high-alarm sensor, crit < warn means low-alarm. The seeder built the
 //! data this way on purpose; one derived bool, zero extra columns.
 
+use crate::warm::StoredReading;
 use crate::{error::IngestError, state::AppState, types::*};
 use axum::{extract::State, Json};
 use serde::Serialize;
+use std::sync::atomic::Ordering;
 use tracing::debug;
 
 #[derive(Debug, Serialize, Default)]
@@ -29,6 +31,8 @@ pub struct IngestSummary {
     pub rejected_inactive: usize,
     pub violations_warn: usize,
     pub violations_critical: usize,
+    /// True if the gateway is currently sampling bulk storage (1-in-10).
+    pub degraded: bool,
 }
 
 pub async fn ingest_batch(
@@ -49,6 +53,13 @@ pub async fn ingest_batch(
     let reg = s.registry.load();
 
     let mut sum = IngestSummary::default();
+    // Degradation watermark: below 20% channel headroom, storage drops
+    // to 1-in-10 sampling. THRESHOLD EVALUATION IS NOT AFFECTED — every
+    // reading below still runs the full safety check. Storage fidelity
+    // bends; safety never does. This check is per-batch: cheap, and a
+    // batch is our unit of consistency.
+    let degraded = s.warm_tx.capacity() < s.warm_capacity / 5;
+    sum.degraded = degraded;
 
     for r in &batch.readings {
         let Some(meta) = reg.sensors.get(&r.sensor_id) else {
@@ -97,7 +108,32 @@ pub async fn ingest_batch(
                    severity = ?violation.severity, value = violation.value,
                    "violation detected");
         }
-        // Session 4: accepted reading -> warm-lane channel (batch writer).
+
+        // --- warm lane: hand the reading to the batch writer ---
+        let (store, quality) = if degraded {
+            let n = s.degrade_seq.fetch_add(1, Ordering::Relaxed);
+            if n % 10 == 0 {
+                (true, Quality::DegradedSampled)
+            } else {
+                s.metrics.warm_degraded_total.with_label_values(&["dropped"]).inc();
+                (false, Quality::Good)
+            }
+        } else {
+            (true, Quality::Good)
+        };
+
+        if store {
+            if degraded {
+                s.metrics.warm_degraded_total.with_label_values(&["kept"]).inc();
+            }
+            // try_send: the handler NEVER blocks on storage (warm-up 04).
+            // Full despite the watermark = burst won the race; count it.
+            if s.warm_tx.try_send(StoredReading {
+                ts: r.ts, sensor_id: r.sensor_id, value: r.value, quality,
+            }).is_err() {
+                s.metrics.warm_degraded_total.with_label_values(&["dropped"]).inc();
+            }
+        }
     }
 
     s.metrics.readings.with_label_values(&["accepted"]).inc_by(sum.accepted as u64);

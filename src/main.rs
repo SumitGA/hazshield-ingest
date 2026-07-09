@@ -7,6 +7,7 @@ mod routes;
 mod state;
 mod telemetry;
 mod types;
+mod warm;
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -26,6 +27,7 @@ async fn run() -> anyhow::Result<()> {
     telemetry::init();
     let cfg = config::Config::load()?;
     info!(bind = %cfg.bind_addr, "hazshield-ingest starting");
+    let metrics_handle = metrics::Metrics::new();
 
     // connect, load registry, arm the doorbell
     let pool = sqlx::postgres::PgPoolOptions::new()
@@ -47,9 +49,15 @@ async fn run() -> anyhow::Result<()> {
         Arc::clone(&shared),
     );
 
+    let (warm_tx, warm_rx) = tokio::sync::mpsc::channel(cfg.warm_channel_capacity);
+    let writer = warm::spawn_writer(pool.clone(), warm_rx, metrics_handle.clone());
+
     let app_state = state::AppState {
         metrics: metrics::Metrics::new(),
         max_batch_size: cfg.max_batch_size,
+        warm_tx,
+        warm_capacity: cfg.warm_channel_capacity,
+        degrade_seq: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
         started: Instant::now(),
         pool,
         registry: shared,
@@ -63,7 +71,13 @@ async fn run() -> anyhow::Result<()> {
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 
-    info!("drained and stopped");
+    // Serve returned: the router (and with it every warm_tx clone) is
+    // dropped -> channel closes -> writer sees None -> final flush.
+    // We await that drain with a deadline INSIDE systemd's 15s window.
+    match tokio::time::timeout(Duration::from_secs(10), writer).await {
+        Ok(_) => info!("drained and stopped"),
+        Err(_) => warn!("drain deadline exceeded; exiting with rows possibly buffered"),
+    }
     Ok(())
 }
 
