@@ -5,6 +5,7 @@
 //! internally an Arc, SharedRegistry is an Arc. Cloning this struct costs
 //! ~24 bytes of pointer copies. That is the whole trick.
 
+use crate::types::Violation;
 use crate::{metrics::Metrics, registry::SharedRegistry, warm::StoredReading};
 use sqlx::PgPool;
 use std::sync::{atomic::AtomicU64, Arc};
@@ -22,6 +23,9 @@ pub struct AppState {
     /// shutdown) is what closes the channel and triggers the drain.
     pub warm_tx: mpsc::Sender<StoredReading>,
     pub warm_capacity: usize,
+    /// Hot-lane sender. send().await, never try_send: violations apply
+    /// BACKPRESSURE instead of shedding (see hot.rs header).
+    pub hot_tx: mpsc::Sender<Violation>,
     /// Round-robin counter for 1-in-N sampling in degraded mode.
     pub degrade_seq: Arc<AtomicU64>,
 }

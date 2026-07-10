@@ -21,12 +21,19 @@ pub struct Metrics {
     pub violations: IntCounterVec,
     pub batch_size: Histogram,
     pub handler_seconds: Histogram,
+    // ---- warm lane ---
     pub warm_flushed_total: IntCounter,
     pub warm_flush_failures_total: IntCounter,
     pub warm_shed_total: IntCounter,
     pub warm_degraded_total: IntCounterVec,
     pub warm_buffered: IntGauge,
     pub warm_flush_seconds: Histogram,
+    // --- hot lane ---
+    pub hot_sent_total: IntCounter,
+    pub hot_spilled_total: IntCounter,
+    pub hot_replayed_total: IntCounter,
+    pub hot_lost_total: IntCounter,
+    pub hot_redis_up: IntGauge, 
 }
 
 impl Metrics {
@@ -81,6 +88,21 @@ impl Metrics {
         registry.register(Box::new(warm_buffered.clone())).unwrap();
         registry.register(Box::new(warm_flush_seconds.clone())).unwrap();
 
+        let hot_sent_total =
+            IntCounter::new("hot_violations_sent_total", "Violations XADDed to the stream").unwrap();
+        let hot_spilled_total =
+            IntCounter::new("hot_violations_spilled_total", "Violations written to spill file").unwrap();
+        let hot_replayed_total =
+            IntCounter::new("hot_violations_replayed_total", "Spilled violations replayed to stream").unwrap();
+        let hot_lost_total =
+            IntCounter::new("hot_violations_lost_total", "Violations LOST (spill unwritable) — must stay 0").unwrap();
+        let hot_redis_up = IntGauge::new("hot_redis_up", "1 when the hot lane has Redis").unwrap();
+
+        for c in [&hot_sent_total, &hot_spilled_total, &hot_replayed_total, &hot_lost_total] {
+            registry.register(Box::new(c.clone())).unwrap();
+        }
+        registry.register(Box::new(hot_redis_up.clone())).unwrap();
+
         for c in [&readings, &violations] {
             registry.register(Box::new(c.clone())).unwrap();
         }
@@ -89,7 +111,8 @@ impl Metrics {
 
         Self { registry: Arc::new(registry), readings, violations, batch_size, handler_seconds,
             warm_flushed_total, warm_flush_failures_total, warm_shed_total, warm_degraded_total,
-            warm_buffered, warm_flush_seconds
+            warm_buffered, warm_flush_seconds, hot_sent_total, hot_spilled_total, hot_replayed_total, 
+            hot_lost_total, hot_redis_up 
         }
     }
 

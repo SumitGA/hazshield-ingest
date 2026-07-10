@@ -28,7 +28,14 @@ pub struct Config {
     /// Max readings per ingest batch request.
     #[serde(default = "default_max_batch")]
     pub max_batch_size: usize,
+
+    /// Directory for the hot-lane spill file (must be writable — the
+    /// systemd unit whitelists it via ReadWritePaths).
+    #[serde(default = "default_spool_dir")]
+    pub spool_dir: String,
 }
+
+fn default_spool_dir() -> String { "/opt/hazshield-ingest/spool".into() }   
 
 fn default_bind() -> String { "127.0.0.1:8020".into() }
 fn default_channel_capacity() -> usize { 50_000 }

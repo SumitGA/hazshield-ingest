@@ -102,11 +102,18 @@ pub async fn ingest_batch(
                 },
                 ts: r.ts,
             };
-            // Session 5: violation -> hot-lane channel (XADD + pub/sub).
-            // Until then: visible in logs at debug, counted in metrics.
             debug!(sensor = %violation.sensor_id, zone = %violation.zone_id,
                    severity = ?violation.severity, value = violation.value,
                    "violation detected");
+            // Hot lane: send().await — if the dispatcher is saturated we
+            // BLOCK this request rather than drop an alarm. Err only if
+            // the dispatcher is gone (shutdown race): spill via metrics
+            // visibility is handled there; here we surface loudly.
+            if s.hot_tx.send(violation).await.is_err() {
+                s.metrics.hot_lost_total.inc();
+                tracing::error!("hot lane closed while ingesting — violation lost");
+            }
+            
         }
 
         // --- warm lane: hand the reading to the batch writer ---

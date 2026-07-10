@@ -1,5 +1,6 @@
 mod config;
 mod error;
+mod hot;
 mod ingest;
 mod metrics;
 mod registry;
@@ -52,11 +53,21 @@ async fn run() -> anyhow::Result<()> {
     let (warm_tx, warm_rx) = tokio::sync::mpsc::channel(cfg.warm_channel_capacity);
     let writer = warm::spawn_writer(pool.clone(), warm_rx, metrics_handle.clone());
 
+    // Hot lane: sized for alarm storms (10k in flight), not steady state.
+    let (hot_tx, hot_rx) = tokio::sync::mpsc::channel(10_000);
+    let dispatcher = hot::spawn_dispatcher(
+        cfg.redis_url.clone(),
+        std::path::PathBuf::from(&cfg.spool_dir),
+        hot_rx,
+        metrics_handle.clone(),
+    );
+
     let app_state = state::AppState {
         metrics: metrics::Metrics::new(),
         max_batch_size: cfg.max_batch_size,
         warm_tx,
         warm_capacity: cfg.warm_channel_capacity,
+        hot_tx,
         degrade_seq: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
         started: Instant::now(),
         pool,
