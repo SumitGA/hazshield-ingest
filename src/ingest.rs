@@ -31,6 +31,10 @@ pub struct IngestSummary {
     pub rejected_inactive: usize,
     pub violations_warn: usize,
     pub violations_critical: usize,
+    /// Evaluated for safety but NOT stored: over the sensor's rate budget.
+    pub rate_limited: usize,
+    /// Rejected outright: non-finite value (inf/overflow) — untrustable.
+    pub rejected_invalid: usize,    
     /// True if the gateway is currently sampling bulk storage (1-in-10).
     pub degraded: bool,
 }
@@ -53,6 +57,7 @@ pub async fn ingest_batch(
     let reg = s.registry.load();
 
     let mut sum = IngestSummary::default();
+    
     // Degradation watermark: below 20% channel headroom, storage drops
     // to 1-in-10 sampling. THRESHOLD EVALUATION IS NOT AFFECTED — every
     // reading below still runs the full safety check. Storage fidelity
@@ -70,7 +75,19 @@ pub async fn ingest_batch(
             sum.rejected_inactive += 1;
             continue;
         }
+        // Physical sanity: JSON happily parses 1e39 into f32::INFINITY.
+        // A non-finite value can't be evaluated OR stored — reject.
+        if !r.value.is_finite() {
+            sum.rejected_invalid += 1;
+            continue;
+        }
         sum.accepted += 1;
+
+        // Rate limiting gates STORAGE only — evaluation always runs.
+        let within_budget = s.limiter.allow(r.sensor_id, meta.sample_hz);
+        if !within_budget {
+            sum.rate_limited += 1;
+        }
 
         // --- inline threshold evaluation: the 5ms promise starts here ---
         let v = r.value as f64;

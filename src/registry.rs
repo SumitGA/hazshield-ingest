@@ -29,6 +29,8 @@ pub struct SensorMeta {
     pub warn_threshold: f64,
     pub crit_threshold: f64,
     pub active: bool,
+    /// Declared sample rate — the rate limiter's budget basis.
+    pub sample_hz: f32,
 }
 
 #[derive(Debug, Default)]
@@ -43,9 +45,9 @@ impl Registry {
     pub async fn load(pool: &PgPool, generation: u64) -> Result<Self, sqlx::Error> {
         // One query, whole table. 3k rows is nothing; even 300k would be
         // fine at startup. Rebuild-then-swap beats incremental mutation.
-        let rows: Vec<(Uuid, Uuid, f64, f64, String)> = sqlx::query_as(
+        let rows: Vec<(Uuid, Uuid, f64, f64, String, f32)> = sqlx::query_as(
             r#"SELECT sensor_id, zone_id, warn_threshold, crit_threshold,
-                      status::text
+                      status::text, sample_hz
                FROM sensor"#,
         )
         .fetch_all(pool)
@@ -53,7 +55,7 @@ impl Registry {
 
         let sensors = rows
             .into_iter()
-            .map(|(sensor_id, zone_id, warn_threshold, crit_threshold, status)| {
+            .map(|(sensor_id, zone_id, warn_threshold, crit_threshold, status, sample_hz)| {
                 (
                     sensor_id,
                     SensorMeta {
@@ -61,6 +63,7 @@ impl Registry {
                         warn_threshold,
                         crit_threshold,
                         active: status == "active",
+                        sample_hz,
                     },
                 )
             })

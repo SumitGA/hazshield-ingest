@@ -2,6 +2,7 @@ mod config;
 mod error;
 mod hot;
 mod ingest;
+mod limiter;
 mod metrics;
 mod registry;
 mod routes;
@@ -63,11 +64,12 @@ async fn run() -> anyhow::Result<()> {
     );
 
     let app_state = state::AppState {
-        metrics: metrics::Metrics::new(),
+        metrics: metrics_handle.clone(),
         max_batch_size: cfg.max_batch_size,
         warm_tx,
         warm_capacity: cfg.warm_channel_capacity,
         hot_tx,
+        limiter: std::sync::Arc::new(limiter::RateLimiter::new()),
         degrade_seq: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
         started: Instant::now(),
         pool,
@@ -85,7 +87,8 @@ async fn run() -> anyhow::Result<()> {
     // Serve returned: the router (and with it every warm_tx clone) is
     // dropped -> channel closes -> writer sees None -> final flush.
     // We await that drain with a deadline INSIDE systemd's 15s window.
-    match tokio::time::timeout(Duration::from_secs(10), writer).await {
+    let drains = async { let _ = writer.await; let _ = dispatcher.await; };
+    match tokio::time::timeout(Duration::from_secs(10), drains).await {
         Ok(_) => info!("drained and stopped"),
         Err(_) => warn!("drain deadline exceeded; exiting with rows possibly buffered"),
     }
