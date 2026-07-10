@@ -133,6 +133,10 @@ pub async fn ingest_batch(
             
         }
 
+        if !within_budget {
+            continue;
+        }
+
         // --- warm lane: hand the reading to the batch writer ---
         let (store, quality) = if degraded {
             let n = s.degrade_seq.fetch_add(1, Ordering::Relaxed);
